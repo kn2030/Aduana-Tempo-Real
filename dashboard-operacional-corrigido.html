@@ -1714,6 +1714,7 @@
     const header = planRows[0];
     const idIdx = findHeaderIndex(header, ['unit_id']);
     const statusIdx = findHeaderIndex(header, ['status']);
+    const substatusIdx = findHeaderIndex(header, ['substatus', 'sub_status', 'substatus_atual', 'status_detail', 'status_detail_name']);
     const facilityIdx = findHeaderIndex(header, ['facility_origin']);
     const promiseEndIdx = findHeaderIndex(header, ['promise_date_end']);
     const rotaIdx = findHeaderIndex(header, ['n.º rota', 'numero rota', 'n° rota', 'rota', 'route_id', 'route']);
@@ -1763,7 +1764,9 @@
       if(!row) continue;
       const id = normId(row[idIdx]);
       if(id === null) continue;
-      const status = row[statusIdx] === null || row[statusIdx] === undefined ? '' : String(row[statusIdx]).trim();
+      const statusMain = row[statusIdx] === null || row[statusIdx] === undefined ? '' : String(row[statusIdx]).trim();
+      const statusSub = substatusIdx === -1 || row[substatusIdx] === null || row[substatusIdx] === undefined ? '' : String(row[substatusIdx]).trim();
+      const status = statusSub && !statusMain.includes('|') ? statusMain + '|' + statusSub : statusMain;
       const facility = (facilityIdx === -1 || row[facilityIdx] === null || row[facilityIdx] === undefined) ? null : String(row[facilityIdx]).trim();
       let promiseEnd = null;
       if(promiseEndIdx !== -1 && row[promiseEndIdx]){
@@ -1941,7 +1944,7 @@
   let lastMetricIds = { d1: [], recebido: [], onWay: [], faltante: [], faltanteAvailable: false };
   function ehStatusD1(status){
     if(status == null) return false;
-    const s = String(status).trim().toLowerCase().replace(/\s*\|\s*/g,'|').replace(/\s+/g,'_');
+    const s = String(status).trim().toLowerCase().replace(/\s*\|\s*/g,'|').replace(/[\s-]+/g,'_');
     return s === 'at_station|sorting' || s === 'at_station|buffered';
   }
 
@@ -1985,6 +1988,7 @@
       }
     }
 
+    // Diferença de totais é estimativa, não confirmação de status "no carrinho".
     const noCarrinho = Math.max(0, totalGeral - new Set(allRows.map(r => r.id)).size);
 
     // "Faltante" IDs = package IDs present in the BASE sheet but absent from the
@@ -2002,6 +2006,12 @@
     lastMetricIds = { d1: d1Ids, recebido: recebidoIds, onWay: onWayIds, faltante: faltanteIds, faltanteAvailable };
 
     renderCards({totalGeral, d1, onWay, recebido, noCarrinho});
+    const classificaveis = Array.from(statusMap.values()).filter(ehStatusD1).length;
+    if(d1 === 0 && classificaveis === 0 && statusMap.size){
+      syncNotice('D-1 não identificado: a Base Estrutura salva não contém status sorting/buffered reconhecíveis. Reenvie o XLSX para ler status e substatus da PLANIFICATION. Não interprete zero como ausência confirmada de D-1.');
+    }else{
+      syncNotice('');
+    }
     renderOrigemChart();
     renderStatusChart({d1, onWay, recebido, noCarrinho, totalGeral});
     renderEarlyTable();
