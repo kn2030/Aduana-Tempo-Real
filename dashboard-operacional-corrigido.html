@@ -1335,14 +1335,13 @@
   }
   function atualizarD1Parcial(){
     if(!base1Data || base2Rows) return;
-    const ids = Array.from(base1Data.statusMap.entries())
-      .filter(([id,status]) => ehStatusD1(status)).map(([id]) => id);
-    const total = getEffectiveTotalGeral();
-    document.getElementById('valTotal').textContent = fmt(total);
-    document.getElementById('valD1').textContent = fmt(ids.length);
-    document.getElementById('pctD1').textContent = 'prévia da estrutura · CSV pendente';
-    document.getElementById('barD1').style.width = (total > 0 ? Math.min(100, ids.length/total*100) : 0) + '%';
-    lastMetricIds.d1 = ids;
+    // A estrutura sozinha pode incluir pacotes já colocados no carrinho.
+    // Não publicar contagem sem cruzamento com o CSV de faltantes.
+    document.getElementById('valTotal').textContent = fmt(getEffectiveTotalGeral());
+    document.getElementById('valD1').textContent = '—';
+    document.getElementById('pctD1').textContent = 'aguardando CSV de faltantes';
+    document.getElementById('barD1').style.width = '0%';
+    lastMetricIds.d1 = [];
   }
   function atualizarEstadoBases(){
     atualizarD1Parcial();
@@ -1353,7 +1352,7 @@
       syncNotice('ATENÇÃO: Base Estrutura não disponível. O painel precisa de uma estrutura válida para calcular D-1 e totais. Os dados existentes não foram apagados.');
     }else if(!base2Rows){
       document.getElementById('emptyHint').textContent = 'A Base Estrutura está carregada, mas falta o CSV de faltantes.';
-      syncNotice('CSV de faltantes indisponível: D-1 exibido como prévia da Base Estrutura, sem conferência cruzada. Reenvie o CSV para completar os indicadores.');
+      syncNotice('CSV indisponível: D-1 e reporte dependem do cruzamento com os faltantes. Reenvie o CSV para obter dados confiáveis.');
     }else{
       syncNotice('');
     }
@@ -1956,7 +1955,10 @@
     let d1 = 0, recebido = 0;
     const d1Ids = [], recebidoIds = [];
     const recebidoRows = [];
+    const idsContados = new Set();
     for(const r of allRows){
+      if(idsContados.has(r.id)) continue;
+      idsContados.add(r.id);
       const status = statusMap.get(r.id);
       const isD1 = ehStatusD1(status);
       if(isD1){
@@ -1971,12 +1973,15 @@
 
     let onWay = 0;
     const onWayIds = [];
+    const idsOnWay = new Set();
     for(const r of visibleRows){
+      if(idsOnWay.has(r.id)) continue;
       const status = statusMap.get(r.id);
       const isD1 = ehStatusD1(status);
       if(!isD1 && r.loc === 'Caminho para a estação'){
         onWay++;
         onWayIds.push(r.id);
+        idsOnWay.add(r.id);
       }
     }
 
@@ -2468,12 +2473,12 @@
     const el = document.getElementById(elId);
     const canvas = await html2canvas(el, {
       backgroundColor: '#EEF2F8',
-      scale: 6,
+      scale: Math.min(2, window.devicePixelRatio || 1.5),
       useCORS: true,
       logging: false,
-      imageTimeout: 0
+      imageTimeout: 12000
     });
-    return await new Promise(resolve => canvas.toBlob(resolve, 'image/png', 1.0));
+    return await new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Falha ao gerar PNG')), 'image/png'));
   }
 
   async function exportImage(opts){
@@ -2553,7 +2558,7 @@
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      URL.revokeObjectURL(url);
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
       hint.textContent = 'baixado — envie como arquivo/documento no WhatsApp p/ manter qualidade';
     }catch(err){
       showError('Não consegui gerar a imagem: ' + err.message);
